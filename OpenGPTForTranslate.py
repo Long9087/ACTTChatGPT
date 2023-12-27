@@ -3,69 +3,72 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import subprocess
 import win32clipboard
 
 # Constants
-batch_file_path = 'OpenDebugerChrome.bat'
+BATCH_FILE_PATH = 'OpenDebugerChrome.bat'
 CHAT_URL = 'https://chat.openai.com'
 CHROMEDRIVER_PATH = 'chromedriver-win64/chromedriver.exe'
-ASK_FOR_GPT_WORK = "I'm playing a video game, I need you to work as a typo corrector and translator to Vietnamese and I need you to show both the corrected text and translated text and not put them in any code style in your respone!"
+ASK_FOR_GPT_WORK_FILE = 'FirstChatGPT.txt'
 
 # Set the URL of the ChatGPT website
-service = Service(executable_path= CHROMEDRIVER_PATH)
+service = Service(executable_path=CHROMEDRIVER_PATH)
 chrome_options = Options()
-print("Add the protocol of debuggerAddress")
 chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:8989")
 
+def read_text_from_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read().strip()
+
+
 def check_clipboard():
-    # Open the clipboard
     win32clipboard.OpenClipboard()
-    
     try:
-        # Check if the clipboard contains text
         if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
-            # Get the text data from the clipboard
-            clipboard_data = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
-            return clipboard_data
+            return win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
         else:
             return None
     finally:
-        # Close the clipboard
         win32clipboard.CloseClipboard()
 
-if __name__ == "__main__":
 
-    subprocess.call(batch_file_path, shell=True)
+def initialize_driver():
+    subprocess.call(BATCH_FILE_PATH, shell=True)
     print("Opening GPT on chrome done!")
+    return webdriver.Chrome(service=service, options=chrome_options, keep_alive=True)
 
-    driver = webdriver.Chrome(service=service, options = chrome_options,keep_alive=True)
-    # Open the ChatGPT website
-    driver.get(CHAT_URL)
-    # Wait for the page to load (you might need to adjust the sleep duration)
-    time.sleep(2)
 
-    # Interact with the chat interface (replace with appropriate element locators)
-    print("Send mesege to GPT")
-    chat_input = driver.find_element(By.ID,'prompt-textarea')
-    chat_input.send_keys(ASK_FOR_GPT_WORK + Keys.ENTER)
-    print("Send mesege to GPT done!!")
+def send_message(driver, message):
+    print("Send message to GPT")
+    chat_input = driver.find_element(By.ID, 'prompt-textarea')
+    chat_input.send_keys(message + Keys.ENTER)
+    print("Send message to GPT done!!")
 
-    # Initialize the variable to keep track of the clipboard content
-    previous_clipboard_content = check_clipboard()
 
-    while True:
-        # Check the clipboard for changes
-        current_clipboard_content = check_clipboard()
+if __name__ == "__main__":
+    driver = initialize_driver()
 
-        # If there is new content, perform the paste and Enter key press actions
-        if current_clipboard_content and current_clipboard_content != previous_clipboard_content:
-            print("Send mesege to GPT")
-            chat_input = driver.find_element(By.ID,'prompt-textarea')
-            chat_input.send_keys(current_clipboard_content.replace('\n', ' ').replace('\r', '') + Keys.ENTER)
-            print("Send mesege to GPT done!!")
-            previous_clipboard_content = current_clipboard_content
+    try:
+        driver.get(CHAT_URL)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'prompt-textarea')))
 
-        # Add a delay to avoid continuously checking the clipboard (adjust as needed)
-        time.sleep(0.5)
+        ASK_FOR_GPT_WORK = read_text_from_file(ASK_FOR_GPT_WORK_FILE)
+        send_message(driver, ASK_FOR_GPT_WORK)
+
+        previous_clipboard_content = check_clipboard()
+
+        while True:
+            current_clipboard_content = check_clipboard()
+
+            if current_clipboard_content and current_clipboard_content != previous_clipboard_content:
+                send_message(driver, current_clipboard_content.replace('\n', ' ').replace('\r', ''))
+                previous_clipboard_content = current_clipboard_content
+
+            time.sleep(0.5)
+
+    finally:
+        driver.quit()
